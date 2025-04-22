@@ -1,0 +1,6 @@
+venv/
+*.env
+.vscode/
+*.sqlite3
+*__pycache__/
+backend/backend/scripts/
