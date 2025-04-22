@@ -1,0 +1,62 @@
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.utils.translation import gettext_lazy as _
+from django.core.validators import RegexValidator
+from django.conf import settings
+from django.db import models
+
+phone_validator = RegexValidator(
+    regex=r'^\d{10}$',
+    message=_('Mobile number must be 11 digits')
+)
+
+# Create your models here.
+
+class UserManager(BaseUserManager):
+    "Custom user manager"
+    
+    def create_user(self, email: str, username: str, password=None, **args):
+        "Create and save a User with the given email and password."
+        if not email: raise ValueError(_('The email must be set'))
+        if not username: raise ValueError(_('The username must be set'))
+        email = self.normalize_email(email)
+        user = self.model(email=email, username=username, **args)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+    
+    def create_superuser(self, email : str, username : str, password=None, **args):
+        "Create and save a SuperUser with the given email and password."
+        args.setdefault('is_staff', True)
+        args.setdefault('is_superuser', True)
+        args.setdefault('is_active', True)
+        
+        if args.get('is_staff') is not True: raise ValueError(_('Superuser must have is_staff=True.'))
+        if args.get('is_superuser') is not True: raise ValueError(_('Superuser must have is_superuser=True.'))
+        
+        return self.create_user(email, username, password, **args)
+        
+class User(AbstractUser):
+    "Custom User Model"
+    name = models.CharField(_('name'), max_length=255)
+    mobile = models.CharField(
+        _('mobile'), 
+        max_length=10, 
+        unique=True,
+        validators=[phone_validator]
+    )
+    dob = models.DateField(_('birth date'), null=True, blank=True)
+    username = models.CharField(_('username'), max_length=200, unique=True, null=False)
+    email = models.EmailField(_('email address'), max_length=200, unique=True, null=False)
+    created_at = models.DateTimeField(_('created at'), auto_now_add=True)
+    
+    objects = UserManager()
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = [ 'name', 'email']
+    
+    class Meta:
+        verbose_name = _('User')
+        verbose_name_plural = _('Users')
+        ordering = ['username']
+        
+    def __str__(self):
+        return self.username

@@ -1,0 +1,60 @@
+# !Custom user manager
+class CustomUserManager(BaseUserManager):
+  "Custom user manager for CustomUser"
+  
+  def create_user(self, name, email, username, dob, nic, password, **args):
+    "Create and save a User with the given email and password"
+    if not nic: raise ValueError(_("The NIC field must be set"))
+    if not email: raise ValueError(_("The Email field must be set"))
+    if not username: raise ValueError(_("The Username field must be set"))
+    
+    email = self.normalize_email(email)
+    user = self.model(name=name, dob=dob, email=email, **args)
+    user.set_password(password)
+    user.save(using=self._db)
+    return user
+  
+  def create_superuser(self, name, email, username, dob, nic, password, **args):
+    "Create and save a superuser with the given email and password"
+    if args.get('is_staff') is not True: raise ValueError(_('Superuser must have is_staff=True.'))
+    if args.get('is_superuser') is not True: raise ValueError(_('Superuser must have is_superuser=True.'))
+    if args.get('role') != User.Role.ADMIN: raise ValueError(_('Superuser must have role of Admin.'))
+
+    args.setdefault('is_staff', True)
+    args.setdefault('is_superuser', True)
+    args.setdefault('is_active', True)
+    args.setdefault('role', User.Role.ADMIN)
+    return self.create_user(name, email, username, dob, nic, password, **args)
+  
+# !Custom user model
+class User(AbstractUser):
+    # We don't need username if using email as the identifier
+    username = None
+    email = models.EmailField(_('email address'), unique=True)
+
+    class Role(models.TextChoices):
+        ADMIN = 'ADMIN', _('Admin')
+        MANAGER = 'MANAGER', _('Manager')
+        SUPERVISOR = 'SUPERVISOR', _('Supervisor')
+        OPERATOR = 'OPERATOR', _('Operator')
+        TECHNICIAN = 'TECHNICIAN', _('Technician')
+        PURCHASING = 'PURCHASING', _('Purchasing Staff')
+
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.OPERATOR)
+    # Link to workshop, allowing null if user isn't workshop-specific (e.g., admin)
+    workshop = models.ForeignKey(
+        'Workshop',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees' # Allows Workshop.employees.all()
+    )
+    # contact_info = models.CharField(max_length=255, blank=True) # Can add more fields
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['first_name', 'last_name'] # Fields prompted for when using createsuperuser
+
+    objects = CustomUserManager() # Use the custom manager
+
+    def __str__(self):
+        return self.email

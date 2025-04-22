@@ -1,0 +1,425 @@
+# factory/models.py
+from django.db import models
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.utils.translation import gettext_lazy as _
+from django.conf import settings # To reference the AUTH_USER_MODEL easily
+
+# --- Custom User Manager ---
+class CustomUserManager(BaseUserManager):
+    """
+    Custom user model manager where email is the unique identifier
+    for authentication instead of username.
+    """
+    def create_user(self, email, password=None, **extra_fields):
+        """
+        Create and save a User with the given email and password.
+        """
+        if not email:
+            raise ValueError(_('The Email must be set'))
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password) # Hashes the password
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """
+        Create and save a SuperUser with the given email and password.
+        """
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+        extra_fields.setdefault('role', User.Role.ADMIN) # Assign a default Admin role
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError(_('Superuser must have is_staff=True.'))
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError(_('Superuser must have is_superuser=True.'))
+        if extra_fields.get('role') != User.Role.ADMIN:
+             raise ValueError(_('Superuser must have role of Admin.'))
+
+        return self.create_user(email, password, **extra_fields)
+
+# --- Custom User Model ---
+class User(AbstractUser):
+    # We don't need username if using email as the identifier
+    username = None
+    email = models.EmailField(_('email address'), unique=True)
+
+    class Role(models.TextChoices):
+        ADMIN = 'ADMIN', _('Admin')
+        MANAGER = 'MANAGER', _('Manager')
+        SUPERVISOR = 'SUPERVISOR', _('Supervisor')
+        OPERATOR = 'OPERATOR', _('Operator')
+        TECHNICIAN = 'TECHNICIAN', _('Technician')
+        PURCHASING = 'PURCHASING', _('Purchasing Staff')
+
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.OPERATOR)
+    # Link to workshop, allowing null if user isn't workshop-specific (e.g., admin)
+    workshop = models.ForeignKey(
+        'Workshop',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees' # Allows Workshop.employees.all()
+    )
+    # contact_info = models.CharField(max_length=255, blank=True) # Can add more fields
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['first_name', 'last_name'] # Fields prompted for when using createsuperuser
+
+    objects = CustomUserManager() # Use the custom manager
+
+    def __str__(self):
+        return self.email
+
+# --- Factory Core Models ---
+
+class Workshop(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    location = models.CharField(max_length=150, blank=True)
+    # Use settings.AUTH_USER_MODEL to avoid circular imports if defined elsewhere
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervised_workshops',
+        limit_choices_to={'role__in': [User.Role.SUPERVISOR, User.Role.MANAGER, User.Role.ADMIN]} # Optional: Limit choices
+    )
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Workshop"
+        verbose_name_plural = "Workshops"
+
+    def __str__(self):
+        return self.name
+
+class Skill(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+# Intermediate model for Employee Skills with proficiency
+class EmployeeSkill(models.Model):
+    class Proficiency(models.TextChoices):
+        BEGINNER = 'BEGINNER', _('Beginner')
+        INTERMEDIATE = 'INTERMEDIATE', _('Intermediate')
+        ADVANCED = 'ADVANCED', _('Advanced')
+        EXPERT = 'EXPERT', _('Expert')
+
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='skill_levels')
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name='employee_levels')
+    proficiency_level = models.CharField(max_length=20, choices=Proficiency.choices, default=Proficiency.BEGINNER)
+    certification_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('employee', 'skill') # Ensure an employee doesn't have the same skill twice
+        verbose_name = "Employee Skill"
+        verbose_name_plural = "Employee Skills"
+
+    def __str__(self):
+        return f"{self.employee.email} - {self.skill.name} ({self.get_proficiency_level_display()})"
+
+
+class Machine(models.Model):
+    class Status(models.TextChoices):
+        OPERATIONAL = 'OPERATIONAL', _('Operational')
+        IDLE = 'IDLE', _('Idle')
+        MAINTENANCE = 'MAINTENANCE', _('Under Maintenance')
+        BROKEN = 'BROKEN', _('Broken Down')
+
+    name = models.CharField(max_length=100)
+    model_number = models.CharField(max_length=100, blank=True)
+    workshop = models.ForeignKey(Workshop, on_delete=models.PROTECT, related_name='machines') # Protect workshop if machines exist
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.IDLE)
+    last_maintenance_date = models.DateField(null=True, blank=True)
+    next_maintenance_date = models.DateField(null=True, blank=True)
+    purchase_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['workshop', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.workshop.name})"
+
+class Material(models.Model):
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    unit_of_measure = models.CharField(max_length=20) # e.g., 'kg', 'm', 'pcs'
+    specification = models.TextField(blank=True)
+    # For simple inventory: track quantity here. Update via signals/methods.
+    # For robust inventory: Use InventoryTransaction model only.
+    quantity_on_hand = models.DecimalField(max_digits=12, decimal_places=4, default=0.0)
+    reorder_level = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.unit_of_measure})"
+
+class Supplier(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    contact_person = models.CharField(max_length=100, blank=True)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    address = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class PurchaseOrder(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', _('Draft')
+        ORDERED = 'ORDERED', _('Ordered')
+        SHIPPED = 'SHIPPED', _('Shipped')
+        PARTIALLY_RECEIVED = 'PARTIALLY_RECEIVED', _('Partially Received')
+        RECEIVED = 'RECEIVED', _('Received Complete')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+
+    po_number = models.CharField(max_length=50, unique=True, help_text="Unique Purchase Order Number")
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='purchase_orders')
+    order_date = models.DateField(auto_now_add=True)
+    expected_delivery_date = models.DateField(null=True, blank=True)
+    actual_delivery_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=25, choices=Status.choices, default=Status.DRAFT)
+    # total_amount can be calculated or stored
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_pos')
+
+    class Meta:
+        ordering = ['-order_date']
+
+    def __str__(self):
+        return self.po_number
+
+class PurchaseOrderItem(models.Model):
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
+    material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name='po_items') # Protect material if used in POs
+    quantity_ordered = models.DecimalField(max_digits=10, decimal_places=4)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity_received = models.DecimalField(max_digits=10, decimal_places=4, default=0.0)
+
+    class Meta:
+        ordering = ['purchase_order', 'material']
+        unique_together = ('purchase_order', 'material') # Can't have same material twice on one PO
+
+    def __str__(self):
+        return f"{self.material.name} ({self.quantity_ordered}) for PO {self.purchase_order.po_number}"
+
+    @property
+    def line_total(self):
+        return self.quantity_ordered * self.unit_price
+
+class InventoryTransaction(models.Model):
+    class TransactionType(models.TextChoices):
+        RECEIPT = 'RECEIPT', _('Receipt (PO)')
+        ISSUE = 'ISSUE', _('Issue (Task)')
+        ADJUSTMENT_IN = 'ADJUSTMENT_IN', _('Adjustment In')
+        ADJUSTMENT_OUT = 'ADJUSTMENT_OUT', _('Adjustment Out')
+        INITIAL_STOCK = 'INITIAL_STOCK', _('Initial Stock')
+
+    material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name='inventory_transactions')
+    transaction_type = models.CharField(max_length=20, choices=TransactionType.choices)
+    quantity = models.DecimalField(max_digits=12, decimal_places=4, help_text="Positive for IN, Negative for OUT")
+    transaction_date = models.DateTimeField(auto_now_add=True)
+    # Link to source documents
+    purchase_order_item = models.ForeignKey(PurchaseOrderItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_receipts')
+    task = models.ForeignKey('Task', on_delete=models.SET_NULL, null=True, blank=True, related_name='material_issues') # Forward reference OK
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_actions')
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-transaction_date']
+        verbose_name = "Inventory Transaction"
+        verbose_name_plural = "Inventory Transactions"
+
+    def __str__(self):
+        return f"{self.get_transaction_type_display()} of {self.material.name} ({self.quantity}) on {self.transaction_date.strftime('%Y-%m-%d')}"
+
+    # Add signal receiver or override save() to update Material.quantity_on_hand if using that field
+
+
+class Product(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(blank=True)
+    specification = models.TextField(blank=True)
+    # Bill of Materials (BoM) could be a separate ManyToManyField or another model
+    # materials_required = models.ManyToManyField(Material, through='BillOfMaterial', blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class ManufacturingProcess(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(blank=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='manufacturing_processes', null=True, blank=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Manufacturing Process"
+        verbose_name_plural = "Manufacturing Processes"
+
+    def __str__(self):
+        return self.name
+
+class ProcessStep(models.Model):
+    manufacturing_process = models.ForeignKey(ManufacturingProcess, on_delete=models.CASCADE, related_name='steps')
+    step_number = models.PositiveIntegerField()
+    description = models.CharField(max_length=255)
+    standard_time = models.DurationField(null=True, blank=True, help_text="Estimated time (e.g., '00:30:00' for 30 mins)")
+    required_skill = models.ForeignKey(Skill, on_delete=models.SET_NULL, null=True, blank=True, related_name='process_steps')
+    required_machine = models.ForeignKey(Machine, on_delete=models.SET_NULL, null=True, blank=True, related_name='process_steps')
+    instructions = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['manufacturing_process', 'step_number']
+        unique_together = ('manufacturing_process', 'step_number')
+        verbose_name = "Process Step"
+        verbose_name_plural = "Process Steps"
+
+    def __str__(self):
+        return f"Step {self.step_number}: {self.description} (Process: {self.manufacturing_process.name})"
+
+class Project(models.Model):
+    class Status(models.TextChoices):
+        PLANNING = 'PLANNING', _('Planning')
+        ACTIVE = 'ACTIVE', _('Active')
+        ON_HOLD = 'ON_HOLD', _('On Hold')
+        COMPLETED = 'COMPLETED', _('Completed')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+
+    class Priority(models.IntegerChoices):
+        LOW = 1, _('Low')
+        MEDIUM = 2, _('Medium')
+        HIGH = 3, _('High')
+        URGENT = 4, _('Urgent')
+
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
+    quantity_ordered = models.PositiveIntegerField(null=True, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNING)
+    priority = models.IntegerField(choices=Priority.choices, default=Priority.MEDIUM)
+    project_manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='managed_projects',
+        limit_choices_to={'role__in': [User.Role.MANAGER, User.Role.ADMIN]} # Optional limit
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-priority', 'due_date', 'name']
+
+    def __str__(self):
+        return self.name
+
+class Task(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        ASSIGNED = 'ASSIGNED', _('Assigned')
+        IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+        BLOCKED = 'BLOCKED', _('Blocked')
+        QA_PENDING = 'QA_PENDING', _('QA Pending')
+        COMPLETED = 'COMPLETED', _('Completed')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
+    # Optional link to a standard process step
+    process_step = models.ForeignKey(ProcessStep, on_delete=models.SET_NULL, null=True, blank=True, related_name='tasks')
+    title = models.CharField(max_length=200) # Short title for the task
+    description = models.TextField(blank=True) # More detailed description
+    workshop = models.ForeignKey(Workshop, on_delete=models.PROTECT, related_name='tasks')
+    assigned_employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_tasks'
+    )
+    assigned_machine = models.ForeignKey(
+        Machine,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_tasks'
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    estimated_hours = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    actual_hours_worked = models.DecimalField(max_digits=6, decimal_places=2, default=0.0)
+    scheduled_start_date = models.DateTimeField(null=True, blank=True)
+    scheduled_end_date = models.DateTimeField(null=True, blank=True)
+    actual_start_date = models.DateTimeField(null=True, blank=True)
+    actual_end_date = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True) # For follow-ups, blocking reasons, etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Dependencies (optional, for more complex workflows)
+    # depends_on = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='blocking')
+
+    class Meta:
+        ordering = ['project', 'scheduled_start_date', 'created_at']
+
+    def __str__(self):
+        return f"{self.title} (Project: {self.project.name})"
+
+# Optional: Model to explicitly track material consumption per task
+# Alternatively, use the InventoryTransaction model directly linked to Task
+class TaskMaterialConsumption(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='materials_consumed')
+    material = models.ForeignKey(Material, on_delete=models.PROTECT)
+    quantity_consumed = models.DecimalField(max_digits=10, decimal_places=4)
+    consumption_date = models.DateTimeField(auto_now_add=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        ordering = ['-consumption_date']
+        verbose_name = "Task Material Consumption"
+        verbose_name_plural = "Task Material Consumptions"
+
+    def __str__(self):
+        return f"{self.quantity_consumed} {self.material.unit_of_measure} of {self.material.name} for Task {self.task.id}"
+
+
+# Optional: Simple Activity Log
+class ActivityLog(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField(max_length=255) # e.g., "Task Status Updated", "PO Created"
+    # Generic relation to link to any model (more complex)
+    # content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    # object_id = models.PositiveIntegerField()
+    # content_object = GenericForeignKey('content_type', 'object_id')
+    # Or simpler: store related object info as text/FKs if needed
+    related_model = models.CharField(max_length=100, blank=True, null=True) # e.g., "Task", "Project"
+    related_id = models.PositiveIntegerField(blank=True, null=True)
+    details = models.TextField(blank=True) # e.g., "Status changed from PENDING to IN_PROGRESS"
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = "Activity Log"
+        verbose_name_plural = "Activity Logs"
+
+    def __str__(self):
+        user_email = self.user.email if self.user else "System"
+        return f"{self.timestamp.strftime('%Y-%m-%d %H:%M')} - {user_email} - {self.action}"

@@ -1,0 +1,79 @@
+# !Custom user manager
+class CustomUserManager(BaseUserManager):
+
+    def create_user(self, email, password=None, **args):
+        "Create and save a User with the given email and password."
+        if not email: raise ValueError(_('The Email must be set'))
+        email = self.normalize_email(email)
+        user = self.model(email=email, **args)
+        user.set_password(password) # Hashes the password
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **args):
+        "Create and save a SuperUser with the given email and password."
+        args.setdefault('is_staff', True)
+        args.setdefault('is_superuser', True)
+        args.setdefault('is_active', True)
+        args.setdefault('role', User.Role.ADMIN) # Assign a default Admin role
+
+        if args.get('is_staff') is not True: raise ValueError(_('Superuser must have is_staff=True.'))
+        if args.get('is_superuser') is not True: raise ValueError(_('Superuser must have is_superuser=True.'))
+        if args.get('role') != User.Role.ADMIN: raise ValueError(_('Superuser must have role of Admin.'))
+
+        return self.create_user(email, password, **args)
+
+# !Custom User Model
+class User(AbstractUser):
+    username = models.CharField(max_length=200, unique=True, null=False) # Keeping username for compatibility, but can be removed if not needed
+    email = models.EmailField(_('email address'), unique=True)
+    name = models.CharField(_('name'), max_length=255)
+    nic = models.CharField(_('NIC'), max_length=20, unique=True)  # Assuming NIC is unique
+    dob = models.DateField(_('date of birth'), null=True, blank=True)
+
+    class Role(models.TextChoices):
+        ADMIN = 'ADMIN', _('Admin')
+        MANAGER = 'MANAGER', _('Manager')
+        SUPERVISOR = 'SUPERVISOR', _('Supervisor')
+        OPERATOR = 'OPERATOR', _('Operator')
+        TECHNICIAN = 'TECHNICIAN', _('Technician')
+        PURCHASING = 'PURCHASING', _('Purchasing Staff')
+
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.OPERATOR)
+    # Link to workshop, allowing null if user isn't workshop-specific (e.g., admin)
+    workshop = models.ForeignKey(
+        'Workshop',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees' # Allows Workshop.employees.all()
+    )
+    # contact_info = models.CharField(max_length=255, blank=True) # Can add more fields
+
+    objects = CustomUserManager() # Use the custom manager
+    USERNAME_FIELD = 'username' # Using username as the unique identifier
+    REQUIRED_FIELDS = ['name', 'nic', 'dob', 'email'] # Fields prompted for when using createsuperuser
+
+    def __str__(self):
+        return self.email
+      
+class Workshop(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    location = models.CharField(max_length=150, blank=True)
+    # Use settings.AUTH_USER_MODEL to avoid circular imports if defined elsewhere
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervised_workshops',
+        limit_choices_to={'role__in': [User.Role.SUPERVISOR, User.Role.MANAGER, User.Role.ADMIN]} # Optional: Limit choices
+    )
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = "Workshop"
+        verbose_name_plural = "Workshops"
+
+    def __str__(self):
+        return self.name      
