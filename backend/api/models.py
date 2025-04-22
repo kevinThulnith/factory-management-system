@@ -635,7 +635,6 @@ class Product(models.Model):
         through="ProductProcess",
         related_name="products",
         blank=True,
-        null=True,
         verbose_name=_("manufacturing processes"),
     )
 
