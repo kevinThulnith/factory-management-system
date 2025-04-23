@@ -90,7 +90,7 @@ class OrderMaterialSerializer(serializers.ModelSerializer):
 
 
 class ProductionLineSerializer(serializers.ModelSerializer):
-    worksop_name = serializers.StringRelatedField(source="workshop", read_only=True)
+    workshop_name = serializers.StringRelatedField(source="workshop", read_only=True)
     machine_name = serializers.StringRelatedField(source="machine", read_only=True)
 
     class Meta:

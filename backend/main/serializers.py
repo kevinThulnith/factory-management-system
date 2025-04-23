@@ -19,18 +19,18 @@ class UserSerializer(serializers.ModelSerializer):
             "department",
         ]
         extra_kwargs = {
-            "password": {"write_only": True, "required": True},
+            "name": {"required": True},
             "email": {"required": True},
             "username": {"required": True},
-            "name": {"required": True},
+            "password": {"write_only": True, "required": True},
         }
 
     def create(self, validated_data):
-        # Use create_user for proper password hashing
+        # !Use create_user for proper password hashing
         return User.objects.create_user(**validated_data)
 
     def update(self, instance, validated_data):
-        # Secure password update
+        # !Secure password update
         password = validated_data.pop("password", None)
 
         # Update other fields

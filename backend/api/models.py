@@ -324,7 +324,7 @@ class Supplier(models.Model):
     """
     Supplier Model
 
-    - One-to-Many with oeders (a supplier can have many purchases) ☑️
+    - One-to-Many with orders (a supplier can have many purchases) ☑️
     """
 
     name = models.CharField(_("name"), max_length=150)
@@ -572,7 +572,7 @@ class ProductionSchedule(models.Model):
         default=ScheduleStatus.SCHEDULED,
         verbose_name=_("status"),
     )
-    uodated_at = models.DateTimeField(_("updated at"), auto_now=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
     created_by = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -948,8 +948,8 @@ class SkillMatrix(models.Model):
         SAFETY = "SAFETY", _("Safety")
         LOGISTICS = "LOGISTICS", _("Logistics")
         MAINTENANCE = "MAINTENANCE", _("Maintenance")
-        OPARATIONS = "OPERATIONS", _("Operations")
-        DESING = "DESIGN", _("Design")
+        OPERATIONS = "OPERATIONS", _("Operations")
+        DESIGN = "DESIGN", _("Design")
         OTHER = "OTHER", _("Other")
 
     name = models.CharField(_("name"), max_length=255)

@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from django.core.validators import RegexValidator
 from django.db import models
 
-# TODO: Deaclare field validators
+# TODO: Declare field validators
 
 phone_validator = RegexValidator(
     regex=r"^\d{10}$", message=_("Mobile number must be 10 digits")
