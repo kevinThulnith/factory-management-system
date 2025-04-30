@@ -367,7 +367,10 @@ class Order(models.Model):
         User, on_delete=models.CASCADE, related_name="created_orders"
     )
     status = models.CharField(
-        max_length=20, choices=OrderStatus.choices, default=OrderStatus.DRAFT
+        max_length=20,
+        choices=OrderStatus.choices,
+        default=OrderStatus.DRAFT,
+        db_index=True,
     )
     updated_at = models.DateTimeField(_("updated at"), auto_now=True)
     total = models.DecimalField(
@@ -376,6 +379,11 @@ class Order(models.Model):
 
     class Meta:
         ordering = ["order_date"]
+        indexes = [
+            models.Index(
+                fields=["supplier", "status"]
+            ),  # Composite index for common queries
+        ]
 
     def __str__(self):
         return f"Order #{self.id} from {self.supplier.name}"
@@ -430,6 +438,10 @@ class OrderMaterial(models.Model):
     class Meta:
         ordering = ["order"]
         unique_together = ["order", "material"]
+        indexes = [
+            models.Index(fields=["order"]),
+            models.Index(fields=["material"]),
+        ]
 
     def __str__(self):
         return f"{self.material.name} - {self.unit_price} - {self.quantity} -> {self.total_price}"
