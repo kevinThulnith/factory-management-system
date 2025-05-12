@@ -28,5 +28,5 @@ class UserInfoView(APIView):
     def get(self, request):
         user = request.user
         return Response(
-            {"name": user.name, "username": user.username, "email": user.email}
+            {"name": user.name, "username": user.username, "email": user.email, "role": user.role}
         )
