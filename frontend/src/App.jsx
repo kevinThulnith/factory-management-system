@@ -26,6 +26,10 @@ import SupplierListPage from './pages/Suppliers/SupplierListPage';
 import SupplierFormPage from './pages/Suppliers/SupplierFormPage';
 import SupplierDetailPage from './pages/Suppliers/SupplierDetailPage';
 
+import ProductListPage from './pages/products/ProductListPage';
+import ProductFormPage from './pages/products/ProductFormPage';
+import ProductDetailPage from './pages/products/ProductDetailPage';
+
 function App() {
   return (
     <Router>
@@ -63,6 +67,11 @@ function App() {
               <Route path="/suppliers" element={<SupplierListPage/>} />
               <Route path="/suppliers/add" element={<SupplierFormPage/>} />
               <Route path="/suppliers/:id" element={<SupplierDetailPage/>} />
+
+              <Route path="/products" element={<ProductListPage />} />
+              <Route path="/products/add" element={<ProductFormPage />} />
+              <Route path="/products/:id" element={<ProductDetailPage />} /> {/* Detail page often handles edit toggle */}
+              <Route path="/products/:id/edit" element={<ProductFormPage />} /> {/* Or dedicated edit route */}
               {/* Add other routes like: */}
               {/* <Route path="/skills" element={<SkillsPage />} /> */}
               {/* etc. */}

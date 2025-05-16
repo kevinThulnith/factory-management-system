@@ -129,7 +129,7 @@ export const listUsers = () => api.get('/users/'); // Gets a list of all users (
 export const getUserDetail = (userId) => api.get(`/user/${userId}/`); // Gets details for a specific user
 
 // --- Skill Matrix ---
-export const listSkills = () => api.get('/skill/');
+export const listSkills = () => api.get('/skill-matrix/');
 export const createSkill = (data) => api.post('/skill/', data);
 export const getSkillDetail = (id) => api.get(`/skill/${id}/`);
 export const updateSkill = (id, data) => api.put(`/skill/${id}/`, data);
@@ -169,6 +169,12 @@ export const createMaterial = (data) => api.post('/material/', data);
 export const getMaterialDetail = (id) => api.get(`/material/${id}/`);
 export const updateMaterial = (id, data) => api.put(`/material/${id}/`, data);
 export const deleteMaterial = (id) => api.delete(`/material/${id}/`);
+
+export const listProducts = () => api.get('/product/');
+export const getProductDetail = (id) => api.get(`/product/${id}/`);
+export const createProduct = (data) => api.post('/product/', data);
+export const updateProduct = (id, data) => api.patch(`/product/${id}/`, data);
+export const deleteProduct = (id) => api.delete(`/product/${id}/`);
 
 
 export default api; // Export the configured instance for direct use if needed

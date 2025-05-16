@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserInfo } from '../services/api';
 import { FiSettings, FiLogOut } from 'react-icons/fi';
-import { Building2, LayoutDashboardIcon , Star, Cog, Factory, Truck, Box } from 'lucide-react';
+import { Building2, LayoutDashboardIcon , Star, Cog, Factory, Truck, Box ,Package } from 'lucide-react';
  // Example import
 
 function Sidebar() {
@@ -66,6 +66,7 @@ function Sidebar() {
     { id: 'machines', name: 'Machines', path: '/machines' , icon:<Cog size={20} /> },
     { id: 'suppliers', name: 'Suppliers', path: '/suppliers' , icon:<Truck size={20} /> },
     { id: 'materials', name: 'Materials', path: '/materials' , icon:<Box size={20} /> },
+    { id: 'products', name: 'Products', path: '/products' , icon:<Package size={20} /> },
   ];
 
   const renderBottomButtons = () => {
